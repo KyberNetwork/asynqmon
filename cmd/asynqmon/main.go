@@ -26,14 +26,16 @@ type Config struct {
 	Port int
 
 	// Redis connection options
-	RedisAddr         string
-	RedisDB           int
-	RedisUsername     string
-	RedisPassword     string
-	RedisTLS          string
-	RedisURL          string
-	RedisInsecureTLS  bool
-	RedisClusterNodes string
+	RedisAddr              string
+	RedisDB                int
+	RedisUsername          string
+	RedisPassword          string
+	RedisTLS               string
+	RedisURL               string
+	RedisInsecureTLS       bool
+	RedisClusterNodes      string
+	RedisSentinelUsername  string
+	RedisSentinelPassword  string
 
 	// UI related configs
 	ReadOnly         bool
@@ -67,6 +69,8 @@ func parseFlags(progname string, args []string) (cfg *Config, output string, err
 	flags.StringVar(&conf.RedisPassword, "redis-password", getEnvDefaultString("REDIS_PASSWORD", ""), "password to use when connecting to redis server")
 	flags.StringVar(&conf.RedisTLS, "redis-tls", getEnvDefaultString("REDIS_TLS", ""), "server name for TLS validation used when connecting to redis server")
 	flags.StringVar(&conf.RedisURL, "redis-url", getEnvDefaultString("REDIS_URL", ""), "URL to redis server")
+	flags.StringVar(&conf.RedisSentinelUsername, "redis-sentinel-username", getEnvDefaultString("REDIS_SENTINEL_USERNAME", ""), "username to use when connecting to redis sentinel")
+	flags.StringVar(&conf.RedisSentinelPassword, "redis-sentinel-password", getEnvDefaultString("REDIS_SENTINEL_PASSWORD", ""), "password to use when connecting to redis sentinel")
 	flags.BoolVar(&conf.RedisInsecureTLS, "redis-insecure-tls", getEnvOrDefaultBool("REDIS_INSECURE_TLS", false), "disable TLS certificate host checks")
 	flags.StringVar(&conf.RedisClusterNodes, "redis-cluster-nodes", getEnvDefaultString("REDIS_CLUSTER_NODES", ""), "comma separated list of host:port addresses of cluster nodes")
 	flags.IntVar(&conf.MaxPayloadLength, "max-payload-length", getEnvOrDefaultInt("MAX_PAYLOAD_LENGTH", 200), "maximum number of utf8 characters printed in the payload cell in the Web UI")
@@ -111,6 +115,18 @@ func makeRedisConnOpt(cfg *Config) (asynq.RedisConnOpt, error) {
 			return nil, err
 		}
 		connOpt := res.(asynq.RedisFailoverClientOpt) // safe to type-assert
+		if cfg.RedisSentinelUsername != "" {
+			connOpt.SentinelUsername = cfg.RedisSentinelUsername
+		}
+		if cfg.RedisSentinelPassword != "" {
+			connOpt.SentinelPassword = cfg.RedisSentinelPassword
+		}
+		if cfg.RedisUsername != "" {
+			connOpt.Username = cfg.RedisUsername
+		}
+		if cfg.RedisPassword != "" {
+			connOpt.Password = cfg.RedisPassword
+		}
 		connOpt.TLSConfig = makeTLSConfig(cfg)
 		return connOpt, nil
 	}
