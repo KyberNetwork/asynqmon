@@ -33,9 +33,15 @@ type metricsFetchOptions struct {
 	// Optional filter to speicify a list of queues to get metrics for.
 	// Empty list indicates no filter (i.e. get metrics for all queues).
 	queues []string
+
+	// Optional label matcher (e.g. `redis_instance="prod"`) restricting
+	// metrics to a single redis instance. Empty indicates no filter.
+	instanceMatcher string
 }
 
-func newGetMetricsHandlerFunc(client *http.Client, prometheusAddr string) http.HandlerFunc {
+// instanceMatcher is an optional PromQL label matcher (e.g. `redis_instance="prod"`)
+// added to every query to scope metrics to a single redis instance.
+func newGetMetricsHandlerFunc(client *http.Client, prometheusAddr, instanceMatcher string) http.HandlerFunc {
 	// res is the result of calling a JSON API endpoint.
 	type res struct {
 		query string
@@ -66,6 +72,7 @@ func newGetMetricsHandlerFunc(client *http.Client, prometheusAddr string) http.H
 			http.Error(w, fmt.Sprintf("invalid query parameter: %v", err), http.StatusBadRequest)
 			return
 		}
+		opts.instanceMatcher = instanceMatcher
 		// List of queries (i.e. promQL) to send to prometheus server.
 		queries := []string{
 			promQLQueueSize,
@@ -164,7 +171,7 @@ func buildPrometheusURL(baseAddr, promQL string, opts *metricsFetchOptions) stri
 	b.WriteString(strings.TrimSuffix(baseAddr, "/"))
 	b.WriteString(prometheusAPIPath)
 	v := url.Values{}
-	v.Add("query", applyQueueFilter(promQL, opts.queues))
+	v.Add("query", applyQueueFilter(promQL, opts.queues, opts.instanceMatcher))
 	v.Add("start", unixTimeString(opts.endTime.Add(-opts.duration)))
 	v.Add("end", unixTimeString(opts.endTime))
 	v.Add("step", strconv.Itoa(int(step(opts).Seconds())))
@@ -173,20 +180,17 @@ func buildPrometheusURL(baseAddr, promQL string, opts *metricsFetchOptions) stri
 	return b.String()
 }
 
-func applyQueueFilter(promQL string, qnames []string) string {
-	if len(qnames) == 0 {
-		return strings.ReplaceAll(promQL, "QUEUE_FILTER", "")
+// applyQueueFilter fills in the QUEUE_FILTER placeholder with matchers for the
+// given queue names and the optional instance label matcher.
+func applyQueueFilter(promQL string, qnames []string, instanceMatcher string) string {
+	var matchers []string
+	if len(qnames) > 0 {
+		matchers = append(matchers, `queue=~"`+strings.Join(qnames, "|")+`"`)
 	}
-	var b strings.Builder
-	b.WriteString(`queue=~"`)
-	for i, q := range qnames {
-		if i != 0 {
-			b.WriteString("|")
-		}
-		b.WriteString(q)
+	if instanceMatcher != "" {
+		matchers = append(matchers, instanceMatcher)
 	}
-	b.WriteByte('"')
-	return strings.ReplaceAll(promQL, "QUEUE_FILTER", b.String())
+	return strings.ReplaceAll(promQL, "QUEUE_FILTER", strings.Join(matchers, ","))
 }
 
 func fetchPrometheusMetrics(client *http.Client, url string) (*json.RawMessage, error) {

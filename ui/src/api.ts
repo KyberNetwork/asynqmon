@@ -1,13 +1,27 @@
 import axios from "axios";
-import queryString from "query-string";
+import { toQueryString } from "./utils";
+
+// Currently selected redis instance id. All API requests are scoped to this
+// instance (path: /api/instances/{id}/...). Defaults to the first instance the
+// server reports; can be changed at runtime via setCurrentInstanceId.
+let currentInstanceId: string =
+  (window.INSTANCES && window.INSTANCES[0] && window.INSTANCES[0].id) ||
+  "default";
+
+export function setCurrentInstanceId(id: string) {
+  currentInstanceId = id;
+}
 
 // In production build, API server is on listening on the same port as
 // the static file server.
 // In developement, we assume that the API server is listening on port 8080.
-const getBaseUrl = () =>
-  process.env.NODE_ENV === "production"
-    ? `${window.ROOT_PATH}/api`
-    : `http://localhost:8080${window.ROOT_PATH}/api`;
+const getBaseUrl = () => {
+  const root =
+    process.env.NODE_ENV === "production"
+      ? `${window.ROOT_PATH}/api`
+      : `http://localhost:8080${window.ROOT_PATH}/api`;
+  return `${root}/instances/${encodeURIComponent(currentInstanceId)}`;
+};
 
 export interface ListQueuesResponse {
   queues: Queue[];
@@ -427,7 +441,7 @@ export async function listActiveTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/active_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -473,7 +487,7 @@ export async function listPendingTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/pending_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -488,7 +502,7 @@ export async function listScheduledTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/scheduled_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -503,7 +517,7 @@ export async function listRetryTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/retry_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -518,7 +532,7 @@ export async function listArchivedTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/archived_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -533,7 +547,7 @@ export async function listCompletedTasks(
 ): Promise<ListTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/completed_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -549,7 +563,7 @@ export async function listAggregatingTasks(
 ): Promise<ListAggregatingTasksResponse> {
   let url = `${getBaseUrl()}/queues/${qname}/groups/${gname}/aggregating_tasks`;
   if (pageOpts) {
-    url += `?${queryString.stringify(pageOpts)}`;
+    url += `?${toQueryString(pageOpts)}`;
   }
   const resp = await axios({
     method: "get",
@@ -1079,7 +1093,7 @@ export async function getMetrics(
   }
   const resp = await axios({
     method: "get",
-    url: `${getBaseUrl()}/metrics?${queryString.stringify(params)}`,
+    url: `${getBaseUrl()}/metrics?${toQueryString({ ...params })}`,
   });
   return resp.data;
 }

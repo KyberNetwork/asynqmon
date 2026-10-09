@@ -13,6 +13,10 @@ import ListItemText from "@material-ui/core/ListItemText";
 import Snackbar from "@material-ui/core/Snackbar";
 import SnackbarContent from "@material-ui/core/SnackbarContent";
 import IconButton from "@material-ui/core/IconButton";
+import Select from "@material-ui/core/Select";
+import MenuItem from "@material-ui/core/MenuItem";
+import FormControl from "@material-ui/core/FormControl";
+import InputLabel from "@material-ui/core/InputLabel";
 import Slide from "@material-ui/core/Slide";
 import { TransitionProps } from "@material-ui/core/transitions";
 import MenuIcon from "@material-ui/icons/Menu";
@@ -29,6 +33,7 @@ import { paths as getPaths } from "./paths";
 import { isDarkTheme, useTheme } from "./theme";
 import { closeSnackbar } from "./actions/snackbarActions";
 import { toggleDrawer } from "./actions/settingsActions";
+import { selectInstance } from "./actions/instancesActions";
 import ListItemLink from "./components/ListItemLink";
 import SchedulersView from "./views/SchedulersView";
 import DashboardView from "./views/DashboardView";
@@ -130,6 +135,10 @@ const useStyles = (theme: Theme) =>
       borderTopRightRadius: "24px",
       borderBottomRightRadius: "24px",
     },
+    instanceSelect: {
+      marginLeft: theme.spacing(3),
+      minWidth: 160,
+    },
   });
 
 function mapStateToProps(state: AppState) {
@@ -137,12 +146,15 @@ function mapStateToProps(state: AppState) {
     snackbar: state.snackbar,
     themePreference: state.settings.themePreference,
     isDrawerOpen: state.settings.isDrawerOpen,
+    instances: state.instances.available,
+    selectedInstanceId: state.instances.selectedId,
   };
 }
 
 const mapDispatchToProps = {
   closeSnackbar,
   toggleDrawer,
+  selectInstance,
 };
 
 const connector = connect(mapStateToProps, mapDispatchToProps);
@@ -178,6 +190,37 @@ function App(props: ConnectedProps<typeof connector>) {
                 <LogoDarkTheme width={200} height={48} />
               ) : (
                 <Logo width={200} height={48} />
+              )}
+              {props.instances.length > 1 && (
+                <FormControl
+                  size="small"
+                  variant="outlined"
+                  className={classes.instanceSelect}
+                >
+                  <InputLabel id="instance-select-label">Instance</InputLabel>
+                  <Select
+                    labelId="instance-select-label"
+                    label="Instance"
+                    value={props.selectedInstanceId}
+                    onChange={(e) => {
+                      const id = e.target.value as string;
+                      if (id === props.selectedInstanceId) return;
+                      // Persists the selection (see store.subscribe in index.tsx).
+                      props.selectInstance(id);
+                      // Reload at the dashboard so no state, polling timer or
+                      // in-flight request from the previous instance survives,
+                      // and we don't land on a queue/task that doesn't exist
+                      // in the new instance.
+                      window.location.assign(`${window.ROOT_PATH}/`);
+                    }}
+                  >
+                    {props.instances.map((inst) => (
+                      <MenuItem key={inst.id} value={inst.id}>
+                        {inst.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               )}
             </Toolbar>
           </AppBar>

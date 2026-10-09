@@ -1,23 +1,26 @@
+// initFlags must be imported first: it parses the server-injected window flags
+// as a side effect, and the store/api modules read those values at import time.
+import "./initFlags";
 import React from "react";
 import ReactDOM from "react-dom";
 import CssBaseline from "@material-ui/core/CssBaseline";
 import { Provider } from "react-redux";
 import App from "./App";
 import store from "./store";
-import parseFlagsUnderWindow from "./parseFlags";
 import * as serviceWorker from "./serviceWorker";
 import { saveState } from "./localStorage";
 import { SettingsState } from "./reducers/settingsReducer";
 
-parseFlagsUnderWindow();
-
 let currentSettings: SettingsState | undefined = undefined;
+let currentInstanceId: string | undefined = undefined;
 store.subscribe(() => {
   const prevSettings = currentSettings;
+  const prevInstanceId = currentInstanceId;
   currentSettings = store.getState().settings;
+  currentInstanceId = store.getState().instances.selectedId;
 
-  // Write to local-storage only when settings have changed.
-  if (prevSettings !== currentSettings) {
+  // Write to local-storage only when settings or the selected instance change.
+  if (prevSettings !== currentSettings || prevInstanceId !== currentInstanceId) {
     saveState(store.getState());
   }
 });

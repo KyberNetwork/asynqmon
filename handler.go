@@ -2,14 +2,42 @@ package asynqmon
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 )
+
+// instanceIDPattern restricts RedisInstance IDs to URL-safe identifiers, since
+// they are used as an API path segment and in PromQL label matchers.
+var instanceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// RedisInstance describes a single named redis connection that asynqmon can
+// monitor. When more than one instance is configured, the Web UI shows a
+// dropdown to switch between them and the API is served under
+// /api/instances/{id}/...
+type RedisInstance struct {
+	// ID is a unique identifier used in the API path
+	// (e.g. /api/instances/{id}/queues). It must match [a-zA-Z0-9_-]+.
+	//
+	// This field is required.
+	ID string
+
+	// Name is a human-readable label shown in the Web UI instance selector.
+	//
+	// This field is optional. Defaults to ID.
+	Name string
+
+	// RedisConnOpt specifies the connection to a redis-server or redis-cluster.
+	//
+	// This field is required.
+	RedisConnOpt asynq.RedisConnOpt
+}
 
 // Options are used to configure HTTPHandler.
 type Options struct {
@@ -21,8 +49,16 @@ type Options struct {
 
 	// RedisConnOpt specifies the connection to a redis-server or redis-cluster.
 	//
-	// This field is required.
+	// This field is required unless RedisInstances is set. When RedisInstances
+	// is non-empty, this field is ignored.
 	RedisConnOpt asynq.RedisConnOpt
+
+	// RedisInstances specifies multiple named redis connections to monitor.
+	//
+	// This field is optional. If set (non-empty), it takes precedence over
+	// RedisConnOpt and the Web UI exposes an instance selector. If empty,
+	// RedisConnOpt is used as a single instance with ID "default".
+	RedisInstances []RedisInstance
 
 	// PayloadFormatter is used to convert payload bytes to string shown in the UI.
 	//
@@ -40,6 +76,14 @@ type Options struct {
 	// to get the time series data about queue metrics and show them in the web UI.
 	PrometheusAddress string
 
+	// PrometheusInstanceLabel is the name of the label that distinguishes
+	// metrics exported for different RedisInstances (e.g. "redis_instance").
+	//
+	// This field is optional. If set, the metrics view of each instance only
+	// queries series whose label value equals that instance's ID. Leave empty
+	// when metrics are not labelled per instance (e.g. a single instance).
+	PrometheusInstanceLabel string
+
 	// Set ReadOnly to true to restrict user to view-only mode.
 	ReadOnly bool
 }
@@ -55,16 +99,53 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.router.ServeHTTP(w, r)
 }
 
+// redisInstance is the internal, fully-initialized representation of a
+// RedisInstance with its live redis client and inspector.
+type redisInstance struct {
+	id        string
+	name      string
+	rc        redis.UniversalClient
+	inspector *asynq.Inspector
+}
+
 // New creates a HTTPHandler with the given options.
 func New(opts Options) *HTTPHandler {
-	if opts.RedisConnOpt == nil {
-		panic("asynqmon.New: RedisConnOpt field is required")
+	// Resolve the configured instances. RedisInstances takes precedence; if it
+	// is empty we fall back to the single RedisConnOpt for backward compatibility.
+	configured := opts.RedisInstances
+	if len(configured) == 0 {
+		if opts.RedisConnOpt == nil {
+			panic("asynqmon.New: RedisConnOpt or RedisInstances field is required")
+		}
+		configured = []RedisInstance{{ID: "default", Name: "default", RedisConnOpt: opts.RedisConnOpt}}
 	}
-	rc, ok := opts.RedisConnOpt.MakeRedisClient().(redis.UniversalClient)
-	if !ok {
-		panic(fmt.Sprintf("asnyqmon.New: unsupported RedisConnOpt type %T", opts.RedisConnOpt))
+
+	seen := make(map[string]bool, len(configured))
+	var instances []redisInstance
+	var closers []func() error
+	for _, inst := range configured {
+		if !instanceIDPattern.MatchString(inst.ID) {
+			panic(fmt.Sprintf("asynqmon.New: RedisInstance.ID %q must be a non-empty URL-safe identifier ([a-zA-Z0-9_-]+)", inst.ID))
+		}
+		if seen[inst.ID] {
+			panic(fmt.Sprintf("asynqmon.New: duplicate RedisInstance ID %q", inst.ID))
+		}
+		seen[inst.ID] = true
+		if inst.RedisConnOpt == nil {
+			panic(fmt.Sprintf("asynqmon.New: RedisConnOpt is required for instance %q", inst.ID))
+		}
+		rc, ok := inst.RedisConnOpt.MakeRedisClient().(redis.UniversalClient)
+		if !ok {
+			panic(fmt.Sprintf("asnyqmon.New: unsupported RedisConnOpt type %T", inst.RedisConnOpt))
+		}
+		i := asynq.NewInspector(inst.RedisConnOpt)
+		name := inst.Name
+		if name == "" {
+			name = inst.ID
+		}
+		instances = append(instances, redisInstance{id: inst.ID, name: name, rc: rc, inspector: i})
+		closers = append(closers, rc.Close, i.Close)
 	}
-	i := asynq.NewInspector(opts.RedisConnOpt)
 
 	// Make sure that RootPath starts with a slash if provided.
 	if opts.RootPath != "" && !strings.HasPrefix(opts.RootPath, "/") {
@@ -74,20 +155,22 @@ func New(opts Options) *HTTPHandler {
 	opts.RootPath = strings.TrimSuffix(opts.RootPath, "/")
 
 	return &HTTPHandler{
-		router:   muxRouter(opts, rc, i),
-		closers:  []func() error{rc.Close, i.Close},
+		router:   muxRouter(opts, instances),
+		closers:  closers,
 		rootPath: opts.RootPath,
 	}
 }
 
-// Close closes connections to redis.
+// Close closes connections to redis. It closes every connection even if some
+// fail, and returns all of the errors joined.
 func (h *HTTPHandler) Close() error {
+	var errs []error
 	for _, f := range h.closers {
 		if err := f(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // RootPath returns the root URL path used for asynqmon application.
@@ -99,7 +182,7 @@ func (h *HTTPHandler) RootPath() string {
 //go:embed ui/build/*
 var staticContents embed.FS
 
-func muxRouter(opts Options, rc redis.UniversalClient, inspector *asynq.Inspector) *mux.Router {
+func muxRouter(opts Options, instances []redisInstance) *mux.Router {
 	router := mux.NewRouter().PathPrefix(opts.RootPath).Subrouter()
 
 	var payloadFmt PayloadFormatter = DefaultPayloadFormatter
@@ -113,6 +196,45 @@ func muxRouter(opts Options, rc redis.UniversalClient, inspector *asynq.Inspecto
 	}
 
 	api := router.PathPrefix("/api").Subrouter()
+
+	// Instance discovery endpoint for the Web UI selector.
+	api.HandleFunc("/instances", newListInstancesHandlerFunc(instances)).Methods("GET")
+
+	// Register the full API surface once per redis instance, scoped under its id.
+	for _, inst := range instances {
+		sub := api.PathPrefix("/instances/" + inst.id).Subrouter()
+		registerAPIHandlers(sub, inst, payloadFmt, resultFmt, opts)
+	}
+
+	// Restrict APIs when running in read-only mode.
+	if opts.ReadOnly {
+		api.Use(restrictToReadOnly)
+	}
+
+	// Unknown API paths (e.g. an instance id that is no longer configured)
+	// get a plain 404 instead of falling through to the UI assets handler.
+	api.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	})
+
+	// Everything else, route to uiAssetsHandler.
+	router.NotFoundHandler = &uiAssetsHandler{
+		rootPath:       opts.RootPath,
+		contents:       staticContents,
+		staticDirPath:  "ui/build",
+		indexFileName:  "index.html",
+		prometheusAddr: opts.PrometheusAddress,
+		readOnly:       opts.ReadOnly,
+		instances:      instancePayload(instances),
+	}
+
+	return router
+}
+
+// registerAPIHandlers registers the full asynqmon API surface on the given
+// (sub)router, bound to a single redis instance.
+func registerAPIHandlers(api *mux.Router, inst redisInstance, payloadFmt PayloadFormatter, resultFmt ResultFormatter, opts Options) {
+	rc, inspector := inst.rc, inst.inspector
 
 	// Queue endpoints.
 	api.HandleFunc("/queues", newListQueuesHandlerFunc(inspector)).Methods("GET")
@@ -205,24 +327,11 @@ func muxRouter(opts Options, rc redis.UniversalClient, inspector *asynq.Inspecto
 	}
 
 	// Time series metrics endpoints.
-	api.HandleFunc("/metrics", newGetMetricsHandlerFunc(http.DefaultClient, opts.PrometheusAddress)).Methods("GET")
-
-	// Restrict APIs when running in read-only mode.
-	if opts.ReadOnly {
-		api.Use(restrictToReadOnly)
+	var instanceMatcher string
+	if opts.PrometheusInstanceLabel != "" {
+		instanceMatcher = fmt.Sprintf("%s=%q", opts.PrometheusInstanceLabel, inst.id)
 	}
-
-	// Everything else, route to uiAssetsHandler.
-	router.NotFoundHandler = &uiAssetsHandler{
-		rootPath:       opts.RootPath,
-		contents:       staticContents,
-		staticDirPath:  "ui/build",
-		indexFileName:  "index.html",
-		prometheusAddr: opts.PrometheusAddress,
-		readOnly:       opts.ReadOnly,
-	}
-
-	return router
+	api.HandleFunc("/metrics", newGetMetricsHandlerFunc(http.DefaultClient, opts.PrometheusAddress, instanceMatcher)).Methods("GET")
 }
 
 // restrictToReadOnly is a middleware function to restrict users to perform only GET requests.

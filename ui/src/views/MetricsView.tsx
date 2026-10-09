@@ -1,7 +1,6 @@
 import React from "react";
 import { connect, ConnectedProps } from "react-redux";
 import { useHistory } from "react-router-dom";
-import queryString from "query-string";
 import { makeStyles } from "@material-ui/core/styles";
 import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
@@ -14,7 +13,7 @@ import { listQueuesAsync } from "../actions/queuesActions";
 import { AppState } from "../store";
 import QueueMetricsChart from "../components/QueueMetricsChart";
 import Tooltip from "../components/Tooltip";
-import { currentUnixtime } from "../utils";
+import { currentUnixtime, toQueryString } from "../utils";
 import MetricsFetchControls from "../components/MetricsFetchControls";
 import { useQuery } from "../hooks";
 import { PrometheusMetricsResponse } from "../api";
@@ -104,7 +103,7 @@ function MetricsView(props: Props) {
         };
     history.push({
       ...history.location,
-      search: queryString.stringify(urlQuery),
+      search: toQueryString(urlQuery),
     });
     setEndTimeSec(endTime);
   };
@@ -120,7 +119,7 @@ function MetricsView(props: Props) {
         };
     history.push({
       ...history.location,
-      search: queryString.stringify(urlQuery),
+      search: toQueryString(urlQuery),
     });
     setDurationSec(duration);
   };

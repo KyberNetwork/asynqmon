@@ -1,0 +1,55 @@
+# Example asynqmon config file for monitoring multiple redis instances.
+# Run with: ./asynqmon --config-file=config.example.yaml
+#
+# This file is parsed as YAML (JSON is also accepted, since YAML is a superset
+# of JSON). Top-level settings below override the corresponding command-line
+# flags. At least one instance is required.
+#
+# Any value may reference an environment variable with ${VAR} syntax, expanded
+# at startup. Use this to keep secrets (e.g. redis passwords) out of the file:
+#   redis_password: "${REDIS_PASSWORD_LOCAL}"
+# Referencing an undefined variable is a fatal error.
+
+port: 8080
+read_only: false
+prometheus_addr: ""
+max_payload_length: 200
+max_result_length: 200
+enable_metrics_exporter: false
+
+instances:
+  # A plain single redis server.
+  - id: local
+    name: "Local"
+    redis_addr: "127.0.0.1:6379"
+    redis_db: 0
+
+  # A second redis server on a different db / port.
+  # Password is read from the REDIS_PASSWORD_SECONDARY environment variable.
+  - id: secondary
+    name: "Secondary"
+    redis_addr: "127.0.0.1:6380"
+    redis_db: 1
+    redis_password: "${REDIS_PASSWORD_SECONDARY}"
+    # redis_dial_timeout: "5s"
+
+  # A redis-sentinel instance with ACL users on both the sentinels and redis.
+  # redis_url must start with "redis-sentinel://" and lists the sentinel
+  # addresses plus ?master=<master name>. Credentials go in the separate keys
+  # below (a username in the URL is ignored, and the URL has no db part).
+  # - id: sentinel
+  #   name: "Sentinel"
+  #   redis_url: "redis-sentinel://sentinel-0:26379,sentinel-1:26379,sentinel-2:26379?master=mymaster"
+  #   redis_db: 0
+  #   # Credentials for the redis master/replicas.
+  #   redis_username: "asynqmon"
+  #   redis_password: "${REDIS_PASSWORD_SENTINEL}"
+  #   # Credentials for the sentinel processes themselves. Omit the username
+  #   # if sentinels use only requirepass (no ACL user).
+  #   redis_sentinel_username: "sentinel-user"
+  #   redis_sentinel_password: "${REDIS_SENTINEL_PASSWORD}"
+
+  # A redis-cluster instance.
+  # - id: cluster
+  #   name: "Cluster"
+  #   redis_cluster_nodes: "localhost:7000,localhost:7001,localhost:7002"

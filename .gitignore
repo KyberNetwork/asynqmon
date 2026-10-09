@@ -36,3 +36,5 @@ dist/
 
 # examples
 examples/
+# Local multi-instance config (may contain secrets). See config.example.yaml.
+/config.yaml

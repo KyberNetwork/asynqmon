@@ -2,6 +2,7 @@ package asynqmon
 
 import (
 	"embed"
+	"encoding/json"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -21,6 +22,7 @@ type uiAssetsHandler struct {
 	indexFileName  string
 	prometheusAddr string
 	readOnly       bool
+	instances      []instanceInfo
 }
 
 // ServeHTTP inspects the URL path to locate a file within the static dir
@@ -60,14 +62,22 @@ func (h *uiAssetsHandler) renderIndexFile(w http.ResponseWriter) error {
 	if err != nil {
 		return err
 	}
+	// Marshal the instance list to a JSON string for injection into the
+	// index.html template (consumed by window.FLAG_INSTANCES in the UI).
+	instancesJSON, err := json.Marshal(h.instances)
+	if err != nil {
+		return err
+	}
 	data := struct {
 		RootPath       string
 		PrometheusAddr string
 		ReadOnly       bool
+		Instances      string
 	}{
 		RootPath:       h.rootPath,
 		PrometheusAddr: h.prometheusAddr,
 		ReadOnly:       h.readOnly,
+		Instances:      string(instancesJSON),
 	}
 	return tmpl.Execute(w, data)
 }

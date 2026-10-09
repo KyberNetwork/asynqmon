@@ -10,6 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.11.1
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/rs/cors v1.7.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

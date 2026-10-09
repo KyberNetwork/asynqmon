@@ -9,9 +9,11 @@ import snackbarReducer from "./reducers/snackbarReducer";
 import queueStatsReducer from "./reducers/queueStatsReducer";
 import redisInfoReducer from "./reducers/redisInfoReducer";
 import metricsReducer from "./reducers/metricsReducer";
+import instancesReducer from "./reducers/instancesReducer";
 import { loadState } from "./localStorage";
 
 const rootReducer = combineReducers({
+  instances: instancesReducer,
   settings: settingsReducer,
   queues: queuesReducer,
   tasks: tasksReducer,

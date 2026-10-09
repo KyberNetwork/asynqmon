@@ -40,4 +40,27 @@ export default function parseFlagsUnderWindow() {
   } else {
     window.READ_ONLY = window.FLAG_READ_ONLY === "true";
   }
+
+  // INSTANCES
+  const fallbackInstances: RedisInstance[] = [
+    { id: "default", name: "default" },
+  ];
+  if (
+    window.FLAG_INSTANCES === undefined ||
+    window.FLAG_INSTANCES.startsWith(goTmplActionPrefix)
+  ) {
+    console.log(
+      "INSTANCES is not defined or was not evaluated by the server. Falling back to default instance"
+    );
+    window.INSTANCES = fallbackInstances;
+  } else {
+    try {
+      const parsed = JSON.parse(window.FLAG_INSTANCES);
+      window.INSTANCES =
+        Array.isArray(parsed) && parsed.length > 0 ? parsed : fallbackInstances;
+    } catch (err) {
+      console.log("INSTANCES could not be parsed. Falling back to default", err);
+      window.INSTANCES = fallbackInstances;
+    }
+  }
 }

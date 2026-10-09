@@ -1,9 +1,14 @@
 .PHONY: api assets build docker
 
 NODE_PATH ?= $(PWD)/ui/node_modules
+# Node 17+ uses OpenSSL 3, which rejects the legacy md4 hashing that
+# react-scripts 5 / webpack rely on (error:0308010C). Re-enable it on those
+# versions so `make build` works on modern Node without manual env tweaks.
+NODE_MAJOR := $(shell node -p "process.versions.node.split('.')[0]" 2>/dev/null)
+NODE_OPENSSL_LEGACY := $(shell [ "$(NODE_MAJOR)" -ge 17 ] 2>/dev/null && echo --openssl-legacy-provider)
 assets:
 	@if [ ! -d "$(NODE_PATH)"  ]; then cd ./ui && yarn install --modules-folder $(NODE_PATH); fi
-	cd ./ui && yarn build --modules-folder $(NODE_PATH)
+	cd ./ui && NODE_OPTIONS="$(NODE_OPENSSL_LEGACY)" yarn build --modules-folder $(NODE_PATH)
 
 # This target skips the overhead of building UI assets.
 # Intended to be used during development.
@@ -14,10 +19,10 @@ api:
 build: assets
 	go build -o asynqmon ./cmd/asynqmon
 
-# Build image and run Asynqmon server (with default settings).
+IMAGE ?= asia.gcr.io/kyber-operation/base/asynqmon
+TAG ?= v0.0.3
+
+# Build the image and push it to the registry.
+# Override the tag to avoid overwriting an existing one: make docker TAG=v0.0.2
 docker:
-	docker build -t asynqmon .
-	docker run --rm \
-		--name asynqmon \
-		-p 8080:8080 \
-		asynqmon --redis-addr=host.docker.internal:6379
+	podman build --platform=linux/amd64 -t $(IMAGE):$(TAG) .

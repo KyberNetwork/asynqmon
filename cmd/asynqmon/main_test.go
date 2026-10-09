@@ -18,17 +18,14 @@ func TestParseFlags(t *testing.T) {
 		{
 			args: []string{"--redis-addr", "localhost:6380", "--redis-db", "3"},
 			want: &Config{
-				RedisAddr: "localhost:6380",
-				RedisDB:   3,
+				Redis: RedisConfig{
+					Addr: "localhost:6380",
+					DB:   3,
+				},
 
 				// Default values
 				Port:                  8080,
-				RedisUsername:         "",
-				RedisPassword:         "",
-				RedisTLS:              "",
-				RedisURL:              "",
-				RedisInsecureTLS:      false,
-				RedisClusterNodes:     "",
+				ConfigFile:            "",
 				MaxPayloadLength:      200,
 				MaxResultLength:       200,
 				EnableMetricsExporter: false,
@@ -60,15 +57,15 @@ func TestParseFlags(t *testing.T) {
 func TestMakeRedisConnOpt(t *testing.T) {
 	var tests = []struct {
 		desc string
-		cfg  *Config
+		cfg  RedisConfig
 		want asynq.RedisConnOpt
 	}{
 		{
 			desc: "With address, db number and password",
-			cfg: &Config{
-				RedisAddr:     "localhost:6380",
-				RedisDB:       1,
-				RedisPassword: "foo",
+			cfg: RedisConfig{
+				Addr:     "localhost:6380",
+				DB:       1,
+				Password: "foo",
 			},
 			want: asynq.RedisClientOpt{
 				Addr:     "localhost:6380",
@@ -78,11 +75,11 @@ func TestMakeRedisConnOpt(t *testing.T) {
 		},
 		{
 			desc: "With address, db number, username and password",
-			cfg: &Config{
-				RedisAddr:     "localhost:6380",
-				RedisDB:       1,
-				RedisUsername: "user",
-				RedisPassword: "foo",
+			cfg: RedisConfig{
+				Addr:     "localhost:6380",
+				DB:       1,
+				Username: "user",
+				Password: "foo",
 			},
 			want: asynq.RedisClientOpt{
 				Addr:     "localhost:6380",
@@ -93,9 +90,9 @@ func TestMakeRedisConnOpt(t *testing.T) {
 		},
 		{
 			desc: "With TLS server name",
-			cfg: &Config{
-				RedisAddr: "localhost:6379",
-				RedisTLS:  "foobar",
+			cfg: RedisConfig{
+				Addr: "localhost:6379",
+				TLS:  "foobar",
 			},
 			want: asynq.RedisClientOpt{
 				Addr:      "localhost:6379",
@@ -104,8 +101,8 @@ func TestMakeRedisConnOpt(t *testing.T) {
 		},
 		{
 			desc: "With redis URL",
-			cfg: &Config{
-				RedisURL: "redis://:bar@localhost:6381/2",
+			cfg: RedisConfig{
+				URL: "redis://:bar@localhost:6381/2",
 			},
 			want: asynq.RedisClientOpt{
 				Addr:     "localhost:6381",
@@ -115,8 +112,8 @@ func TestMakeRedisConnOpt(t *testing.T) {
 		},
 		{
 			desc: "With redis-sentinel URL",
-			cfg: &Config{
-				RedisURL: "redis-sentinel://:secretpassword@localhost:5000,localhost:5001,localhost:5002?master=mymaster",
+			cfg: RedisConfig{
+				URL: "redis-sentinel://:secretpassword@localhost:5000,localhost:5001,localhost:5002?master=mymaster",
 			},
 			want: asynq.RedisFailoverClientOpt{
 				MasterName: "mymaster",
@@ -127,12 +124,13 @@ func TestMakeRedisConnOpt(t *testing.T) {
 		},
 		{
 			desc: "With redis-sentinel URL and separate master credentials",
-			cfg: &Config{
-				RedisURL:              "redis-sentinel://:sentinelpass@localhost:5000,localhost:5001,localhost:5002?master=mymaster",
-				RedisUsername:         "masteruser",
-				RedisPassword:         "masterpass",
-				RedisSentinelUsername: "sentineluser",
-				RedisSentinelPassword: "sentinelpass",
+			cfg: RedisConfig{
+				URL:              "redis-sentinel://:sentinelpass@localhost:5000,localhost:5001,localhost:5002?master=mymaster",
+				DB:               3,
+				Username:         "masteruser",
+				Password:         "masterpass",
+				SentinelUsername: "sentineluser",
+				SentinelPassword: "sentinelpass",
 			},
 			want: asynq.RedisFailoverClientOpt{
 				MasterName: "mymaster",
@@ -142,12 +140,13 @@ func TestMakeRedisConnOpt(t *testing.T) {
 				SentinelPassword: "sentinelpass",
 				Username:         "masteruser",
 				Password:         "masterpass",
+				DB:               3,
 			},
 		},
 		{
 			desc: "With cluster nodes",
-			cfg: &Config{
-				RedisClusterNodes: "localhost:5000,localhost:5001,localhost:5002,localhost:5003,localhost:5004,localhost:5005",
+			cfg: RedisConfig{
+				ClusterNodes: "localhost:5000,localhost:5001,localhost:5002,localhost:5003,localhost:5004,localhost:5005",
 			},
 			want: asynq.RedisClusterClientOpt{
 				Addrs: []string{

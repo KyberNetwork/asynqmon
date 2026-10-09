@@ -1,8 +1,9 @@
-import { AxiosError } from "axios";
+import axios from "axios";
 
 // toErrorStringWithHttpStatus returns a string representaion of axios error with HTTP status.
-export function toErrorStringWithHttpStatus(error: AxiosError<string>): string {
-  const { response } = error;
+// It accepts unknown since catch clause variables are typed as unknown.
+export function toErrorStringWithHttpStatus(error: unknown): string {
+  const response = axios.isAxiosError(error) ? error.response : undefined;
   if (!response) {
     return "error: no error response data available";
   }
@@ -10,12 +11,26 @@ export function toErrorStringWithHttpStatus(error: AxiosError<string>): string {
 }
 
 // toErrorString returns a string representaion of axios error.
-export function toErrorString(error: AxiosError<string>): string {
-  const { response } = error;
+export function toErrorString(error: unknown): string {
+  const response = axios.isAxiosError(error) ? error.response : undefined;
   if (!response) {
     return "Unknown error occurred. See the logs for details.";
   }
-  return response.data;
+  return String(response.data);
+}
+
+// toQueryString encodes params as a URL query string (without the leading "?").
+// Undefined values are omitted.
+export function toQueryString(
+  params: Record<string, string | number | undefined>
+): string {
+  const search = new URLSearchParams();
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined) {
+      search.append(key, String(val));
+    }
+  }
+  return search.toString();
 }
 
 interface Duration {

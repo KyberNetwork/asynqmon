@@ -14,3 +14,5 @@ LICENSE
 .git/
 .github/
 **/node_modules/
+# Local multi-instance config (may contain secrets).
+config.yaml

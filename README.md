@@ -101,6 +101,7 @@ _Note_: Use `--redis-url` to specify address, db-number, and password with one f
 | Flag                              | Env                       | Description                                                                                                                  | Default          |
 | --------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `--port`(int)                     | `PORT`                    | port number to use for web ui server                                                                                         | 8080             |
+| `--config-file`(string)           | `CONFIG_FILE`             | path to a YAML/JSON config file describing multiple redis instances (see below)                                              | ""               |
 | `---redis-url`(string)            | `REDIS_URL`               | URL to redis or sentinel server. See [godoc](https://pkg.go.dev/github.com/hibiken/asynq#ParseRedisURI) for supported format | ""               |
 | `--redis-addr`(string)            | `REDIS_ADDR`              | address of redis server to connect to                                                                                        | "127.0.0.1:6379" |
 | `--redis-db`(int)                 | `REDIS_DB`                | redis database number                                                                                                        | 0                |
@@ -138,6 +139,79 @@ Example:
 
 ```sh
 $ ./asynqmon --redis-cluster-nodes=localhost:7000,localhost:7001,localhost:7002,localhost:7003,localhost:7004,localhost:7006
+```
+
+### Connecting to multiple Redis instances
+
+To monitor **multiple redis instances** from a single asynqmon process, provide
+a config file with `--config-file`. The Web UI shows an instance selector in the
+top bar to switch between them. The file is parsed as YAML (JSON is also accepted
+since YAML is a superset of JSON).
+
+Example `config.yaml`:
+
+```yaml
+port: 8080
+read_only: false
+prometheus_addr: ""
+instances:
+  - id: prod # URL-safe unique id, used in the API path (/api/instances/{id}/...)
+    name: "Production" # label shown in the UI selector
+    redis_addr: "prod-redis:6379"
+    redis_db: 0
+    redis_password: "secret"
+  - id: staging
+    name: "Staging"
+    redis_url: "redis-sentinel://:mypassword@localhost:5000,localhost:5001?master=mymaster"
+  - id: cluster
+    name: "Cluster"
+    redis_cluster_nodes: "localhost:7000,localhost:7001,localhost:7002"
+```
+
+```sh
+$ ./asynqmon --config-file=config.yaml
+```
+
+Per-instance redis keys mirror the single-instance flags: `redis_addr`,
+`redis_db`, `redis_username`, `redis_password`, `redis_tls`, `redis_url`,
+`redis_insecure_tls`, `redis_cluster_nodes`, `redis_sentinel_username`,
+`redis_sentinel_password`, and the duration strings `redis_dial_timeout`,
+`redis_read_timeout`, `redis_write_timeout` (e.g. `"5s"`). The top-level keys
+`port`, `read_only`, `prometheus_addr`, `max_payload_length`,
+`max_result_length`, and `enable_metrics_exporter` override the corresponding
+flags. When `--config-file` is omitted, asynqmon behaves exactly as before with a
+single instance configured from the redis flags/env. Unknown keys in the config
+file are rejected, so typos fail at startup instead of being silently ignored.
+
+With more than one instance, metrics exported via `--enable-metrics-exporter`
+carry a `redis_instance` label set to the instance `id` (e.g.
+`asynq_queue_size{queue="critical",redis_instance="prod"}`), and each instance's
+Metrics page only queries its own series. Without the exporter enabled, metrics
+are not filtered by instance (they come from elsewhere and lack the label). The
+label is not called `instance` because Prometheus reserves that for the scrape
+target.
+
+**Keeping secrets out of the config file**: any value in the config file may
+reference an environment variable using `${VAR}` syntax, which is expanded at
+startup. This is the recommended way to provide redis passwords so they are not
+stored in plaintext. Referencing an undefined variable is a fatal error.
+
+```yaml
+instances:
+  - id: prod
+    name: "Production"
+    redis_addr: "prod-redis:6379"
+    redis_password: "${REDIS_PASSWORD_PROD}"
+  - id: staging
+    name: "Staging"
+    redis_addr: "staging-redis:6379"
+    redis_password: "${REDIS_PASSWORD_STAGING}"
+```
+
+```sh
+$ export REDIS_PASSWORD_PROD=...
+$ export REDIS_PASSWORD_STAGING=...
+$ ./asynqmon --config-file=config.yaml
 ```
 
 ### Integration with Prometheus

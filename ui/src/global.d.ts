@@ -1,9 +1,16 @@
+// RedisInstance describes a single monitored redis instance.
+interface RedisInstance {
+  id: string;
+  name: string;
+}
+
 interface Window {
   // FLAG values are assigned by server under the window object.
   // parseFlagsUnderWindow function parses these values and assigns the interpretted value under the window.
   FLAG_ROOT_PATH: string;
   FLAG_PROMETHEUS_SERVER_ADDRESS: string;
   FLAG_READ_ONLY: string;
+  FLAG_INSTANCES: string;
 
   // Root URL path for asynqmon app.
   // ROOT_PATH should not have the tailing slash.
@@ -15,4 +22,8 @@ interface Window {
 
   // If true, app hides buttons/links to make non-GET requests to the API server.
   READ_ONLY: boolean;
+
+  // List of redis instances the server is monitoring.
+  // Always has at least one entry.
+  INSTANCES: RedisInstance[];
 }
